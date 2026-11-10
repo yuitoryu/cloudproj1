@@ -1,6 +1,6 @@
 # CIFAR-10 性能实验
 
-四个主要文件：`models.py` 定义模型和复杂度估算，`benchmark.py` 运行训练并保存数据，`roofline.py` 校准和画图，`run.sh` 列出实验组合。
+`models.py` 定义模型和复杂度估算，`benchmark.py` 运行训练并保存数据，`roofline.py` 校准和画图。`prepare.sh`、`run_gpu.sh`、`finish.sh` 分别处理准备、GPU 测量和收尾，`run.sh` 提供一键入口和各组实验命令。
 
 ## 环境与单次运行
 
@@ -12,7 +12,7 @@ source /home/yuidesu/.local/share/cloudproj1/venv/bin/activate
 python benchmark.py --model resnet18 --environment local-wsl --device cuda --no-download
 ```
 
-在其他机器上安装与驱动匹配的 PyTorch/torchvision，再执行 `python -m pip install -r requirements.txt`。首次下载数据：
+在其他机器上根据 [PyTorch 安装指南](https://pytorch.org/get-started/locally/) 选择与驱动匹配的 PyTorch 和 torchvision，再执行 `python -m pip install -r requirements.txt`。文件列出了 Python 依赖，Nsight 采集另外需要系统中的 `ncu` 和 GPU 计数器权限。首次下载数据：
 
 ```bash
 python -c "from torchvision.datasets import CIFAR10; CIFAR10('data', train=True, download=True)"
@@ -56,18 +56,18 @@ sbatch nyu_hpc.sbatch all         # NYU HPC，按站点要求指定 account/part
 bash run.sh nyu-hpc all           # 已在 HPC GPU 计算节点的交互作业中
 ```
 
-`all` 依次执行 `prepare`、`gpu` 和 `finish`。HPC 可以在登录节点准备数据，只提交中间的 GPU 阶段。三个命令使用同一个结果目录：
+`all` 依次调用 `prepare.sh`、`run_gpu.sh` 和 `finish.sh`。HPC 可以在登录节点准备数据，只提交中间的 GPU 阶段。三个命令使用同一个结果目录：
 
 ```bash
 run_dir=results/nyu-hpc-01
-bash run.sh nyu-hpc prepare "$run_dir"
+bash prepare.sh nyu-hpc "$run_dir"
 sbatch --wait nyu_hpc.sbatch gpu "$run_dir"
-bash run.sh nyu-hpc finish "$run_dir"
+bash finish.sh nyu-hpc "$run_dir"
 ```
 
-- `prepare` 在 CPU 上检查或下载 CIFAR-10，并创建结果目录。下载需要联网。共享存储已有数据时，用 `DATA_DIR=/path/to/data` 指向包含 `cifar-10-batches-py/` 的目录，并在提交 GPU 作业时沿用该路径。
-- `gpu` 检查 CUDA，跑六组短跑和 18 组 baseline（预热 50 步、测量 1000 步、重复 5 次，默认 1 个 CPU 线程），校准并用 Nsight 采集三个模型。每次 GPU 测量使用新的结果目录。
-- `finish` 在 CPU 上读取已保存的数据，生成性能图、汇总 CSV 和自绘 roofline。GPU 作业结束后即可运行。
+- `prepare.sh` 在 CPU 上检查或下载 CIFAR-10，并创建结果目录。下载需要联网。共享存储已有数据时，用 `DATA_DIR=/path/to/data` 指向包含 `cifar-10-batches-py/` 的目录，并在提交 GPU 作业时沿用该路径。
+- `run_gpu.sh` 检查 CUDA，跑六组短跑和 18 组 baseline（预热 50 步、测量 1000 步、重复 5 次，默认 1 个 CPU 线程），校准并用 Nsight 采集三个模型。已在 GPU 计算节点时，可直接执行 `bash run_gpu.sh nyu-hpc "$run_dir"`。每次 GPU 测量使用新的结果目录。
+- `finish.sh` 在 CPU 上读取已保存的数据，生成性能图、汇总 CSV 和自绘 roofline。GPU 作业结束后即可运行。
 
 把整个结果目录带回本地，里面有 `smoke/`、`baseline/`、`figures/` 和 `nsight/`。Nsight 采集要求目标节点有 `ncu` 和计数器权限。如果采集失败，GPU 阶段会返回非零状态，`finish` 仍可根据已保存的 baseline 生成性能图。可选的参数量扫描用 `size` 单独运行。
 

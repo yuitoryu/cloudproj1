@@ -21,69 +21,6 @@ run_case() {
     if ! "$python" benchmark.py "${common[@]}" "$@"; then failed=1; fi
 }
 
-prepare_run() {
-    local run_root="$1"
-    echo "[1/3] Preparing CIFAR-10 in $data_dir"
-    "$python" - "$data_dir" <<'PY' || return 2
-import sys
-from torchvision.datasets import CIFAR10
-
-CIFAR10(sys.argv[1], train=True, download=True)
-PY
-    mkdir -p -- "$run_root"
-}
-
-measure_gpu() {
-    local run_root="$1" status=0
-    export DEVICE="${DEVICE:-cuda}" THREADS="$threads"
-    echo "[2/3] Measuring on $DEVICE"
-    "$python" - "$DEVICE" <<'PY' || return 2
-import sys
-from benchmark import configure_runtime
-
-if configure_runtime(sys.argv[1]).type != "cuda":
-    raise SystemExit("The gpu stage requires a CUDA GPU")
-PY
-    mkdir -p -- "$run_root" || return 2
-    # Reserve this run before measuring so retries cannot mix configurations.
-    if ! mkdir -- "$run_root/smoke"; then
-        echo "Choose a fresh results directory for the GPU stage" >&2
-        return 2
-    fi
-    OUTPUT_DIR="$run_root/smoke" bash run.sh "$environment" smoke || return 1
-    OUTPUT_DIR="$run_root/baseline" bash run.sh "$environment" baseline \
-        --warmup-steps 50 --steps 1000 --repetitions 5 || status=1
-    OUTPUT_DIR="$run_root/nsight" CAPTURE_ONLY=1 bash run.sh "$environment" profile \
-        --warmup-steps 50 || status=1
-    return "$status"
-}
-
-finish_run() {
-    local run_root="$1" status=0 plotted=0 run_dir
-    local calibration="$run_root/nsight/${label}_calibration.json"
-    echo "[3/3] Plotting results in $run_root"
-    "$python" roofline.py results "$run_root/baseline" \
-        --output-dir "$run_root/figures" || status=1
-    if [[ -f "$calibration" ]]; then
-        for run_dir in "$run_root"/nsight/*/; do
-            if [[ -f "$run_dir/summary.json" && -f "$run_dir/ncu.csv" ]]; then
-                if "$python" roofline.py plot --runs "$run_dir" --calibration "$calibration" \
-                    --output "$run_dir/roofline.png"; then
-                    ((plotted += 1))
-                else
-                    status=1
-                fi
-            fi
-        done
-    fi
-    if (( plotted < 3 )); then
-        echo "roofline-incomplete: plotted $plotted of 3 model captures" >&2
-        status=1
-    fi
-    echo "Results saved to $run_root"
-    return "$status"
-}
-
 case "$group" in
     all)
         if (( $# )); then
@@ -92,22 +29,15 @@ case "$group" in
         fi
         run_root="$output/${label}_$(date +%Y-%m-%d_%H-%M-%S)"
         mkdir -p -- "$output" && mkdir -- "$run_root" || exit 2
-        prepare_run "$run_root" || exit 2
-        measure_gpu "$run_root" || failed=1
-        if [[ -d "$run_root/baseline" ]]; then finish_run "$run_root" || failed=1; fi
-        ;;
-    prepare|gpu|finish)
-        if (( $# != 1 )); then
-            echo "Usage: bash run.sh ENVIRONMENT $group RESULTS_DIRECTORY" >&2
-            exit 2
+        bash prepare.sh "$environment" "$run_root" || exit 2
+        bash run_gpu.sh "$environment" "$run_root" || failed=1
+        if [[ -d "$run_root/baseline" ]]; then
+            bash finish.sh "$environment" "$run_root" || failed=1
         fi
-        case "$group" in
-            prepare) prepare_run "$1" ;;
-            gpu) measure_gpu "$1" ;;
-            finish) finish_run "$1" ;;
-        esac
-        exit $?
         ;;
+    prepare) exec bash prepare.sh "$environment" "$@" ;;
+    gpu) exec bash run_gpu.sh "$environment" "$@" ;;
+    finish) exec bash finish.sh "$environment" "$@" ;;
     baseline)
         for model in resnet18 vit mlp; do
             for batch in 8 32 64; do
