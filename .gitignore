@@ -1,0 +1,58 @@
+# Local project files and generated experiment artifacts
+/cloudproj1/
+/mission.md
+/data/
+/results/
+/.tools/
+
+# Python environments and local environment variables
+.venv/
+.venv-*/
+venv/
+env/
+.env
+.env.*
+!.env.example
+
+# Python bytecode, tooling caches, and coverage
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.nox/
+.ipynb_checkpoints/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# Packaging outputs
+/build/
+/dist/
+*.egg-info/
+
+# Profiler captures, runtime logs, and downloaded installers
+*.ncu-rep
+*.ncu-repz
+*.nsys-rep
+*.qdrep
+*.qdstrm
+*.log
+slurm-*.out
+slurm-*.err
+nohup.out
+/*.run
+/*.deb
+/*.rpm
+
+# Editor and OS files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+Desktop.ini
